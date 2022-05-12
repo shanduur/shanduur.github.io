@@ -3,7 +3,7 @@
 <html>
 	
 	<head>
-	<meta name="generator" content="Hugo 0.83.1" />
+	<meta name="generator" content="Hugo 0.98.0" />
 	<title>Mateusz Urbanek | About</title>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
@@ -325,6 +325,22 @@ Credential ID: <code>PL-N0056502</code>
 
     <dl>
       
+        <dt>GCS-Core</dt>
+<dd>
+  <a href="https://gitlab.com/sat-polsl/gcs/gcs-core" target="_blank" class="button small">View code</a>
+  <p>GCS-Core is an core service interacting and mangaing other Ground Control System components through Docker API, communicating with other
+through ZeroMQ and saving mission logs to MongoDB database. Application was build for Silesian Aerospace Technologies.
+</p>
+</dd>
+      
+        <dt>GCS-CLI</dt>
+<dd>
+  <a href="https://gitlab.com/sat-polsl/gcs/gcs-cli" target="_blank" class="button small">View code</a>
+  <p>GCS-CLI is an command line interface built purely to interact with GCS-Core API, and bootstrap whole Ground Control System.
+Application was build for Silesian Aerospace Technologies.
+</p>
+</dd>
+      
         <dt>DSIP</dt>
 <dd>
   <a href="https://github.com/Shanduur/dsip" target="_blank" class="button small">View code</a>
@@ -353,6 +369,21 @@ It generates synthetic SQL data based on the table definition, that is gathered 
   <div class="content">
 
     <dl>
+      
+        <dt>openshift/installer</dt>
+<dd>
+  <a href="https://github.com/openshift/installer/pull/5217" target="_blank" class="button small">View code</a>
+  <p>Previously, it was possible to set cpus: 1 and coresPerSocket: 8 for vSphere IPI, and installer didn't complain. That resulted in broken installation.
+This pull request was aimed to address that issue, and fix it.
+</p>
+</dd>
+      
+        <dt>mindsdb/mindsdb</dt>
+<dd>
+  <a href="https://github.com/mindsdb/mindsdb/pull/1577" target="_blank" class="button small">View code</a>
+  <p>Added error wrapping to MySQL proxy, that improved the information displayed to the user.
+</p>
+</dd>
       
         <dt>hybridgroup/gocv</dt>
 <dd>
