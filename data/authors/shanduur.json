@@ -1,0 +1,10 @@
+{
+    "name": "Mateusz Urbanek",
+    "image" : "https://avatars.githubusercontent.com/u/32583062",
+    "bio": "Kubernetes Evangelist",
+    "social": [
+        { "linkedin": "https://www.linkedin.com/in/urbanekmateusz/" },
+        { "github": "https://github.com/shanduur" },
+        { "reddit": "https://reddit.com/user/shanduur" }
+    ]
+}
