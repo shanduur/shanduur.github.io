@@ -1,0 +1,38 @@
+:root {
+  /* Neutrals - warm, deep, and vibrant darks */
+  --color-neutral: 255, 255, 255;
+  --color-neutral-50: 248, 250, 252;
+  --color-neutral-100: 235, 238, 242;
+  --color-neutral-200: 200, 208, 216;
+  --color-neutral-300: 160, 172, 185;
+  --color-neutral-400: 120, 136, 155;
+  --color-neutral-500: 85, 100, 120;
+  --color-neutral-600: 65, 80, 100;
+  --color-neutral-700: 45, 60, 80;      /* Richer dark gray */
+  --color-neutral-800: 25, 40, 60;       /* Deep slate with blue undertone */
+  --color-neutral-900: 10, 20, 40;       /* Almost navy for maximum depth */
+
+  /* Primary (Blue) - electric and deep */
+  --color-primary-50: 240, 248, 255;
+  --color-primary-100: 200, 230, 255;    /* Bright sky blue */
+  --color-primary-200: 150, 200, 255;     /* Vibrant azure */
+  --color-primary-300: 100, 170, 255;     /* Electric blue */
+  --color-primary-400: 50, 140, 255;      /* Cobalt pop */
+  --color-primary-500: 0, 110, 235;       /* Strong primary blue */
+  --color-primary-600: 0, 90, 200;        /* Deep royal blue */
+  --color-primary-700: 0, 70, 165;        /* Rich navy-blue */
+  --color-primary-800: 0, 50, 130;        /* Dark sapphire */
+  --color-primary-900: 0, 30, 90;         /* Near-black with blue tone */
+
+  /* Secondary (Orange) - fiery and bold */
+  --color-secondary-50: 255, 248, 240;
+  --color-secondary-100: 255, 230, 200;   /* Soft peach glow */
+  --color-secondary-200: 255, 200, 150;   /* Bright coral */
+  --color-secondary-300: 255, 170, 100;   /* Vibrant orange */
+  --color-secondary-400: 255, 140, 50;    /* Neon tangerine */
+  --color-secondary-500: 235, 110, 0;     /* Pure orange */
+  --color-secondary-600: 200, 90, 0;      /* Deep rust-orange */
+  --color-secondary-700: 165, 70, 0;      /* Burnt sienna */
+  --color-secondary-800: 130, 50, 0;      /* Spicy chocolate-orange */
+  --color-secondary-900: 90, 30, 0;       /* Dark espresso-orange */
+}

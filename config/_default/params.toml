@@ -5,7 +5,7 @@
 # Refer to the theme docs for more details about each of these parameters.
 # https://blowfish.page/docs/configuration/#theme-parameters
 
-colorScheme = "blowfish"
+colorScheme = "shanduur"
 defaultAppearance = "light" # valid options: light or dark
 autoSwitchAppearance = true
 
@@ -17,12 +17,12 @@ replyByEmail = false
 mainSections = ["posts"]
 # robots = ""
 
-disableImageOptimization = false
+disableImageOptimization = true
 disableTextInHeader = false
 # backgroundImageWidth = 1200
 
-# defaultBackgroundImage = "IMAGE.jpg" # used as default for background images
-# defaultFeaturedImage = "IMAGE.jpg" # used as default for featured images in all articles
+defaultBackgroundImage = "img/draft.webp" # used as default for background images
+defaultFeaturedImage = "img/draft.webp" # used as default for featured images in all articles
 
 # highlightCurrentMenuArea = true
 # smartTOC = true
@@ -43,7 +43,7 @@ forgejoDefaultServer = "https://v8.next.forgejo.org"
 
 [homepage]
   layout = "hero" # valid options: page, profile, hero, card, background, custom
-  homepageImage = "/img/homepage.png" # used in: hero, and card
+  homepageImage = "/img/homepage.webp" # used in: hero, and card
   showRecent = true
   showRecentItems = 6
   showMoreLink = true
@@ -61,7 +61,7 @@ forgejoDefaultServer = "https://v8.next.forgejo.org"
   showAuthor = false
   showAuthorBottom = true
   showHero = true
-  heroStyle = "thumbAndBackground" # valid options: basic, big, background, thumbAndBackground
+  heroStyle = "background" # valid options: basic, big, background, thumbAndBackground
   layoutBackgroundBlur = true # only used when heroStyle equals background or thumbAndBackground
   layoutBackgroundHeaderSpace = true # only used when heroStyle equals background
   showBreadcrumbs = true

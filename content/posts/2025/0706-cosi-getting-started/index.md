@@ -3,7 +3,7 @@ title: "Getting Started with COSI: Simplifying Object Storage in Kubernetes"
 date: 2025-07-06
 summary: |
   Learn how to integrate the Container Object Storage Interface (COSI) with Kubernetes to automate object storage provisioning, access management, and application integration.
-tags: ["Go", "Kubernetes", "Container Object Storage Interface"]
+tags: ["Kubernetes", "Container Object Storage Interface"]
 series: ["Container Object Storage Interface"]
 series_order: 1
 authors:
@@ -12,7 +12,7 @@ authors:
 
 The **Container Object Storage Interface (COSI)** is a Kubernetes-native standard for managing object storage buckets and credentials. By abstracting provider-specific details, COSI enables dynamic provisioning, secure access management, and seamless integration with applications. In this guide, we’ll deploy COSI on a Kubernetes cluster, configure a Linode driver, and deploy a sample app that leverages automated object storage workflows.
 
-## Step 1: Install the COSI Controller and CRDs
+## Installation
 
 COSI requires a controller and Custom Resource Definitions (CRDs) to extend Kubernetes' API for object storage operations. Install them using the official Helm chart:
 
@@ -31,7 +31,7 @@ kubectl apply \
   -k 'https://github.com/kubernetes-sigs/container-object-storage-interface//?ref=v0.2.1'
 ```
 
-## Step 2: Install the COSI Driver for Linode
+## COSI Driver for Linode
 
 Providers implement COSI through drivers. Here, we’ll use the **Linode COSI Driver** to manage Linode Object Storage buckets:
 
@@ -50,10 +50,10 @@ Providers implement COSI through drivers. Here, we’ll use the **Linode COSI Dr
        --create-namespace
    ```
 
-## Step 3: Configure BucketClass and BucketAccessClass
+## Classes
 
 ### Define a BucketClass
-A `BucketClass` specifies storage policies. Below, we create two classes—one that deletes buckets automatically and another that retains them:
+A `BucketClass` specifies storage policies. Below, we create two classes - one that deletes buckets automatically and another that retains them:
 
 ```yaml
 # delete-policy.yaml
@@ -95,7 +95,7 @@ parameters: {}
 
 Apply these manifests with `kubectl apply -f <file>.yaml`.
 
-## Step 4: Deploy a Sample Application
+## Sample Application
 
 Let’s deploy an app that writes logs to a COSI-managed bucket. The deployment includes:
 - A `logger` sidecar container that generates logs.
@@ -219,13 +219,13 @@ spec:
 2. **BucketAccess**: References the `BucketAccessClass` to generate credentials stored in a `s3-credentials` Secret.
 3. **Volumes**: The `cosi-secret` volume mounts the credentials, while the `logs` volume is a temporary `emptyDir` for log storage.
 
-## COSI vs. Manual Object Storage Management
+## Benefits
 
-### Without COSI:
+### Without COSI
 - **Manual Steps**: Create buckets via provider UIs/CLIs, manage credentials, and hardcode them in manifests.
 - **Risk**: Credentials exposed in code; no lifecycle management.
 
-### With COSI:
+### With COSI
 - **Dynamic Provisioning**: Buckets and credentials created on-demand via Kubernetes API.
 - **Automated Cleanup**: Set `deletionPolicy: Delete` to remove unused buckets.
 - **Security**: Credentials injected via Secrets, never stored in plaintext.
