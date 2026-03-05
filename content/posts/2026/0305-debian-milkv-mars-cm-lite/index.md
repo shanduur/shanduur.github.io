@@ -12,7 +12,7 @@ Getting Debian running on a new RISC-V board is always a fun adventure. Recently
 
 My goal was simple but specific: I wanted a clean Debian installation running entirely off a fast NVMe drive. For this build, I paired the Mars CM Lite with a **Waveshare Compute Module 4/4S Mini Base Board (model B)**. 
 
-However, there is a catch with the "Lite" version of the Mars CM: **it lacks onboard SPI flash**. This means we cannot flash the U-Boot bootloader directly to the board. We *must* use a microSD card to house the early bootloader (SPL and U-Boot), which will then hand off the actual OS boot process to our NVMe drive.
+However, there is a catch with the "Lite" version of the Mars CM: **it lacks the onboard eMMC found on the non-Lite module**. On the CM Lite, that onboard eMMC is replaced by a microSD card (on the same MMC interface). This means we can't install the early bootloader stages to onboard eMMC; we *must* keep a microSD card inserted to house the early bootloader (SPL and U-Boot), which will then hand off the actual OS boot process to our NVMe drive.
 
 If you're looking to replicate this setup, here is the complete, self-contained process I used to get everything up and running.
 
@@ -31,12 +31,12 @@ I used an FT232R USB-to-serial adapter. On the Waveshare board's GPIO header, th
 To connect from my terminal, I used `tio` with the following command (adjust your `/dev/tty.*` path as needed):
 
 ```shell
-tio /dev/tty.usbserial-A5069RR4 -b 115200 -d 8 -s 1 -p none -f none
+tio /dev/tty.usbserial-A5069RR4 -o 1
 ```
 
 ## Bootstrapping SD Card
 
-Because the CM Lite has no SPI flash, we need an SD card to provide the initial U-Boot environment. The easiest way to get a working, properly partitioned bootloader is to just use the official vendor image.
+Because the CM Lite has no onboard eMMC (it's replaced by microSD), we need an SD card to provide the initial U-Boot environment. The easiest way to get a working, properly partitioned bootloader is to just use the official vendor image.
 
 1. Download the official vendor image from the [Milk-V Mars CM resources page](https://milkv.io/docs/mars/compute-module/resources/images).
 2. Use a tool like **BalenaEtcher** to flash this image onto a microSD card. 
@@ -47,7 +47,7 @@ Set this SD card aside for a moment.
 
 ## Correct EEPROM Data (Optional but Recommended)
 
-Some Milk-V Mars CM Lite units shipped from the factory with incorrect or uninitialized EEPROM data (wrong values for DRAM and eMMC sizes). It is highly recommended to fix this before updating U-Boot, as U-Boot relies on these values to properly initialize the hardware.
+Some Milk-V Mars CM Lite units shipped from the factory with incorrect or uninitialized EEPROM data (for example, wrong values for DRAM size and the eMMC size field). It is highly recommended to fix this before updating U-Boot, as U-Boot relies on these values to properly initialize the hardware.
 
 According to the excellent resource at [freeshell.de](https://freeshell.de/e/riscv64/vf2eeprom/), you can rewrite the EEPROM using the U-Boot console.
 
@@ -56,7 +56,7 @@ According to the excellent resource at [freeshell.de](https://freeshell.de/e/ris
 
 Run the following commands to write the correct EEPROM values.
 
-*Note: In the command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC, and 00001234 represents SN. Refer to the [update EEPROM guide](https://milkv.io/docs/mars/compute-module/update-eeprom) to construct the proper string for your specific model.*
+*Note: The command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC (for the non-Lite module), and 00001234 represents SN. For CM Lite, the eMMC value should reflect that there is no onboard eMMC. Refer to the [update EEPROM guide](https://milkv.io/docs/mars/compute-module/update-eeprom) to construct the proper string for your specific module.*
 
 ```shell
 mac product_id MARC-V10-2340-D004E032-00001234
@@ -74,7 +74,7 @@ The vendor U-Boot included in the official image is too old to properly handle t
 3. Change your working directory to the place where the extracted files are located and start the serial console.
     ```shell
     cd path/to/u-boot
-    tio /dev/tty.usbserial-A5069RR4 -b 115200 -d 8 -s 1 -p none -f none
+    tio /dev/tty.usbserial-A5069RR4 -o 1
     ```
 4. Boot the board with your vendor-flashed SD card and watch the serial console.
 5. **Hit any key to interrupt the autoboot** and drop into the `StarFive #` prompt.
@@ -85,7 +85,7 @@ At this point we're going to "sneak" the new U-Boot binaries into the board over
 
 1. U-Boot receives a file into RAM at `$loadaddr`.
 2. The received size is exposed as `$filesize`.
-3. We then write that RAM buffer into the boot storage using `sf update`.
+3. We then write that RAM buffer into the boot storage using `sf update` (as exposed by this U-Boot build).
 
 The one detail that matters: make sure U-Boot is already sitting in a receive command before you start the transfer from `tio`. Otherwise you'll just watch the host side time out.
 
@@ -200,7 +200,7 @@ env erase
 Next, we need to prepare our installation media.
 
 1. Download the RISC-V Debian `mini.iso` (netboot installer). You can usually find the latest Trixie (testing) installer [here](https://deb.debian.org/debian/dists/trixie/main/installer-riscv64/current/images/netboot/mini.iso).
-2. Flash this `mini.iso` to a standard USB flash drive. You will use the same tool as previously, e.g. **BalenaEtcher**, to flash this image onto a microSD card.
+2. Flash this `mini.iso` to a standard USB flash drive. You can use the same tool as previously, e.g. **BalenaEtcher**.
 
 *Note: This will erase all data on the USB drive.*
 
@@ -222,7 +222,7 @@ Let the installation finish. When the installer prompts you to reboot, power off
 
 ## Lobotomize SD Card
 
-Here is where things get tricky. We still need the microSD card to hold our initial bootloader payload because of the lack of SPI flash. However, if we leave the vendor OS partitions intact on that SD card, U-Boot might default to booting the old vendor system instead of our fresh NVMe Debian install.
+Here is where things get tricky. We still need the microSD card to hold our initial bootloader payload because the CM Lite has no onboard eMMC. However, if we leave the vendor OS partitions intact on that SD card, U-Boot might default to booting the old vendor system instead of our fresh NVMe Debian install.
 
 We need to permanently erase the old OS rootfs and boot partitions from the SD card, while leaving the hidden U-Boot partitions untouched. I call this "lobotomizing" the SD card. I did this from macOS using `diskutil`.
 
