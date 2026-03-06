@@ -10,9 +10,9 @@ authors:
 
 Getting Debian running on a new RISC-V board is always a fun adventure. Recently, I've been playing with the **Milk-V Mars CM Lite** - a compute module that brings the StarFive JH7110 RISC-V SoC to the familiar Raspberry Pi CM4 form factor. 
 
-My goal was simple but specific: I wanted a clean Debian installation running entirely off a fast NVMe drive. For this build, I paired the Mars CM Lite with a **Waveshare Compute Module 4/4S Mini Base Board (model B)**. 
+My goal was simple but specific: I wanted a clean Debian installation running entirely off a fast NVMe drive. For this build, I paired the Mars CM Lite with a **Waveshare Compute Module 4/4S Mini Base Board (model B)**.
 
-However, there is a catch with the "Lite" version of the Mars CM: **it lacks the onboard eMMC found on the non-Lite module**. On the CM Lite, that onboard eMMC is replaced by a microSD card (on the same MMC interface). This means we can't install the early bootloader stages to onboard eMMC; we *must* keep a microSD card inserted to house the early bootloader (SPL and U-Boot), which will then hand off the actual OS boot process to our NVMe drive.
+One important note about the "Lite" module: it has no onboard eMMC. That doesn't matter once we're booting from NVMe, but it does influence how you initially get U-Boot running on the board.
 
 If you're looking to replicate this setup, here is the complete, self-contained process I used to get everything up and running.
 
@@ -20,7 +20,7 @@ If you're looking to replicate this setup, here is the complete, self-contained 
 
 Before we start flashing images, there are two crucial hardware connections you need to make:
 
-1. **Network Connection:** We will be using the Debian `mini.iso` netboot installer. This installer *requires* an active internet connection to download packages during the setup process. You cannot skip this. Plug an Ethernet cable directly from the Waveshare board into your network switch.
+1. **Network Connection:** We will be using Debian Installer's `mini.efi` netboot image. This installer *requires* an active internet connection to download packages during the setup process. You cannot skip this. Plug an Ethernet cable directly from the Waveshare board into your network switch.
 2. **Serial Console (UART):** To interrupt the boot process, manually boot from USB, and reconfigure U-Boot later, you will need a serial connection. 
 
 I used an FT232R USB-to-serial adapter. On the Waveshare board's GPIO header, the wiring is:
@@ -34,16 +34,7 @@ To connect from my terminal, I used `tio` with the following command (adjust you
 tio /dev/tty.usbserial-A5069RR4 -o 1
 ```
 
-## Bootstrapping SD Card
-
-Because the CM Lite has no onboard eMMC (it's replaced by microSD), we need an SD card to provide the initial U-Boot environment. The easiest way to get a working, properly partitioned bootloader is to just use the official vendor image.
-
-1. Download the official vendor image from the [Milk-V Mars CM resources page](https://milkv.io/docs/mars/compute-module/resources/images).
-2. Use a tool like **BalenaEtcher** to flash this image onto a microSD card. 
-
-*Note: This will erase all data on the SD card.*
-
-Set this SD card aside for a moment.
+I also kept a vendor-flashed microSD card around as a "known good" recovery path. If your SPI flash is blank or you soft-brick your bootloader while experimenting, booting from a vendor image can be a quick way back to a U-Boot prompt.
 
 ## Correct EEPROM Data (Optional but Recommended)
 
@@ -56,7 +47,7 @@ According to the excellent resource at [freeshell.de](https://freeshell.de/e/ris
 
 Run the following commands to write the correct EEPROM values.
 
-*Note: The command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC (for the non-Lite module), and 00001234 represents SN. For CM Lite, the eMMC value should reflect that there is no onboard eMMC. Refer to the [update EEPROM guide](https://milkv.io/docs/mars/compute-module/update-eeprom) to construct the proper string for your specific module.*
+*Note: The command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC (for the non-Lite module), and 00001234 represents SN. For CM Lite, the eMMC value should reflect that there is no onboard eMMC. Refer to the [update EEPROM guide](https://milkv.io/docs/mars/compute-module/update-eeprom) to construct the proper string for your specific module and enable write access to EEPROM.*
 
 ```shell
 mac product_id MARC-V10-2340-D004E032-00001234
@@ -65,21 +56,27 @@ mac write_eeprom
 
 Once the EEPROM is corrected, you can proceed to updating U-Boot.
 
-## Update U-Boot on SD Card
+## Update U-Boot
 
-The vendor U-Boot included in the official image is too old to properly handle the Debian EFI installation. We need to update the bootloader binaries on the SD card to the newer upstream versions.
+The stock/vendor U-Boot that ships on the Mars CM is old and heavily board-patched. In practice that means rough edges with EFI booting (needed for Debian's netboot `mini.efi`), less reliable NVMe enumeration, and confusing environment defaults.
 
-1. Download the latest U-Boot release for the StarFive/VisionFive2 family (which supports the Mars CM) from [this repository](https://freeshell.de/e/riscv64/vf2eeprom/). I recommend using `v2026.01` or newer.
+For this walkthrough, we want a recent upstream-ish U-Boot in SPI flash so we can:
+
+- Boot the Debian Installer EFI image directly from U-Boot
+- Use U-Boot's standard distro-boot logic to find GRUB on the NVMe
+- Prefer NVMe early in the boot order
+
+1. Download the latest U-Boot release for the StarFive/VisionFive2 family (which supports the Mars CM) from [this repository](https://freeshell.de/e/riscv64/vf2eeprom/). I've been using the [`v2026.04-rc3`](https://freeshell.de/e/riscv64/vf2eeprom/u-boot-v2026.04rc3-starfive-visionfive2.zip) which is a pre-release build, but please use latest available - `v2026.04-rc3` or later is needed for this tutorial.
 2. Extract the downloaded ZIP file to get `u-boot-spl.bin.normal.out` and `u-boot.itb`.
 3. Change your working directory to the place where the extracted files are located and start the serial console.
     ```shell
     cd path/to/u-boot
     tio /dev/tty.usbserial-A5069RR4 -o 1
     ```
-4. Boot the board with your vendor-flashed SD card and watch the serial console.
+4. Boot the board (using whatever currently boots on your setup: a vendor SD card, or an existing U-Boot in SPI).
 5. **Hit any key to interrupt the autoboot** and drop into the `StarFive #` prompt.
 
-We will transfer the new binaries over the serial connection using Y-Modem and write them to the SD card's hidden boot partitions. 
+We will transfer the new binaries over the serial connection using Y-Modem and write them to the SPI Flash storage. 
 
 At this point we're going to "sneak" the new U-Boot binaries into the board over the serial console. The mental model is straightforward:
 
@@ -110,9 +107,8 @@ Write `u-boot-spl.bin.normal.out`
 ```log
 [19:52:10.856] Sending file 'u-boot-spl.bin.normal.out'
 [19:52:10.856] Press any key to abort transfer
-...…|
+...
 [19:52:24.880] Done
-
 U-Boot SPL 2025.01-3 (Apr 08 2025 - 23:07:41 +0000)
 DDR version: dc2e84f0.
 Trying to boot from UART
@@ -137,7 +133,7 @@ Write `u-boot.itb`
 [19:53:13.244] Press any key to abort transfer
 ```
 
-After `u-boot.itb` is received, SPL hands off into full U-Boot. From here on, we're no longer "booting a one-off image" - we're using a running U-Boot to update the bootloader stored on the SD's boot area.
+After `u-boot.itb` is received, SPL hands off into full U-Boot. From here on, we're no longer "booting a one-off image" - we're using a running U-Boot to update the bootloader stored on the SPI flash.
 
 One thing that can be confusing when you follow a transcript: the receive step (`loady`) has to be active on the board before you start sending from `tio`. If you're reproducing this live, the reliable pattern is: type the `loady ... && sf update ...` command first (it will wait and print `CCC`), then start the YMODEM send from `tio`.
 
@@ -145,7 +141,12 @@ One thing that can be confusing when you follow a transcript: the receive step (
 sf probe
 ```
 
-Initialize access to the boot storage with `sf probe`. Once that succeeds, we can write the new U-Boot proper image. The next command will wait for a YMODEM transfer (`loady $loadaddr`) and then immediately write what it received to offset `0` via `sf update` using `$filesize`.
+Now that we're running the newer U-Boot, we'll flash it permanently to the module's SPI.
+
+The layout we use here matches the common VisionFive2/Mars CM convention:
+
+- SPL at SPI offset `0x000000`
+- U-Boot proper (FIT/ITB) at SPI offset `0x100000`
 
 ```shell
 loady $loadaddr && sf update $loadaddr 0 $filesize
@@ -169,7 +170,7 @@ Write `u-boot-spl.bin.normal.out`
 [19:56:24.803] Press any key to abort transfer
 ```
 
-Now we do the same thing for the SPL. Offset `100000` is the SPL slot in this layout, so after `loady` receives the file into RAM, `sf update` copies it into place. As before, make sure you don't interrupt power while the update is running.
+With SPL written, we do the same for `u-boot.itb` (U-Boot proper) at offset `0x100000`.
 
 ```shell
 loady $loadaddr && sf update $loadaddr 100000 $filesize
@@ -178,8 +179,8 @@ loady $loadaddr && sf update $loadaddr 100000 $filesize
 Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd>
 
 ```log
-[19:56:10.630] Send file with YMODEM
-[19:56:10.630] Enter file name: 
+[19:57:12.273] Send file with YMODEM
+[19:57:12.273] Enter file name: 
 ```
 
 Write `u-boot.itb`
@@ -195,72 +196,43 @@ Finally, wipe the persisted U-Boot environment. After swapping bootloader binari
 env erase
 ```
 
-## Prepare Installer USB
-
-Next, we need to prepare our installation media.
-
-1. Download the RISC-V Debian `mini.iso` (netboot installer). You can usually find the latest Trixie (testing) installer [here](https://deb.debian.org/debian/dists/trixie/main/installer-riscv64/current/images/netboot/mini.iso).
-2. Flash this `mini.iso` to a standard USB flash drive. You can use the same tool as previously, e.g. **BalenaEtcher**.
-
-*Note: This will erase all data on the USB drive.*
-
 ## Install Debian to NVMe
 
-Now we bring it all together to run the installer.
+With U-Boot updated, installing Debian is straightforward: boot the Debian Installer's EFI binary from U-Boot, then install onto the NVMe.
 
-1. Insert the **vendor-flashed microSD card** into the board.
-2. Plug the **Debian installer USB drive** into the top one of the USB ports on the Waveshare board.
-3. Ensure your NVMe drive is installed on the base board.
-4. Power on the board while watching your `tio` serial console.
+1. Insert the NVMe drive.
+2. Make sure Ethernet is connected.
+3. Boot and interrupt autoboot to get the `StarFive #` prompt.
 
-When U-Boot starts, allow it to boot automatically. It should detect the USB drive and launch the GRUB bootloader, which will transition into the familiar Debian text-based installer. Walk through the installation steps normally, keeping the following in mind:
-
-* **Network:** Ensure the installer detects your Ethernet connection and configures DHCP successfully.
-* **Partitioning:** When asked where to install the system, ensure you select your **NVMe drive**, *not* the SD card or the USB installer.
-
-Let the installation finish. When the installer prompts you to reboot, power off the board and **remove the Debian installer USB drive**.
-
-## Lobotomize SD Card
-
-Here is where things get tricky. We still need the microSD card to hold our initial bootloader payload because the CM Lite has no onboard eMMC. However, if we leave the vendor OS partitions intact on that SD card, U-Boot might default to booting the old vendor system instead of our fresh NVMe Debian install.
-
-We need to permanently erase the old OS rootfs and boot partitions from the SD card, while leaving the hidden U-Boot partitions untouched. I call this "lobotomizing" the SD card. I did this from macOS using `diskutil`.
-
-Take the SD card out of the Mars CM Lite and plug it into your Mac. 
-
-First, find your SD card's disk identifier:
-```shell
-diskutil list
-```
-
-Assuming your SD card is `disk4`, you want to wipe partitions 3 and 4 (which hold the vendor rootfs and boot files). **Be extremely careful here not to wipe your Mac's internal drive!**
+Then run:
 
 ```shell
-sudo diskutil eraseVolume free none /dev/disk4s3
-sudo diskutil eraseVolume free none /dev/disk4s4
+dhcp && wget https://deb.debian.org/debian/dists/trixie/main/installer-riscv64/current/images/netboot/mini.efi && bootefi $loadaddr
 ```
 
-Eject the SD card and put it back into the Mars CM Lite.
+Proceed through the installer normally.
 
-## Redirect U-Boot to NVMe
+Important: when the installer asks about installing GRUB to the fallback "removable media path", answer **Yes**.
 
-We are almost done. Power on the board and watch your serial console. Once again, **hit any key to interrupt the autoboot** process.
+```terminal
+It seems that this computer is configured to boot via EFI, but maybe
+that configuration will not work for booting from the hard drive.
+Some EFI firmware implementations do not meet the EFI specification
+(i.e. they are buggy!) and do not support proper configuration of
+boot options from system hard drives.
 
-Now that the SD card is lobotomized, we need to explicitly tell U-Boot to scan the PCIe bus for our NVMe drive, find the Debian GRUB EFI bootloader we just installed, and execute it.
+A workaround for this problem is to install an extra copy of the EFI
+version of the GRUB boot loader to a fallback location, the
+"removable media path". Almost all EFI systems, no matter how buggy,
+will boot GRUB that way.
 
-Run the following commands in the U-Boot console:
-
-```shell
-setenv bootcmd 'nvme scan; load nvme 0:1 ${kernel_addr_r} EFI/debian/grubriscv64.efi; bootefi ${kernel_addr_r} ${fdtcontroladdr}'
-saveenv
+[...]
 ```
 
-The `saveenv` command writes this new default boot behavior into the U-Boot environment on the SD card, ensuring this change persists across reboots. 
+That fallback path (`EFI/BOOT/BOOTRISCV64.EFI`) is what U-Boot typically finds during its EFI scan.
 
 ## Wrapping Up
 
-Once you've saved the environment, you can simply type `boot` (or power cycle the board). 
-
-If everything went according to plan, the board will power on, load the initial SPL and U-Boot from the "dumb" SD card, immediately scan the PCIe bus, initialize the NVMe drive, hand off to GRUB, and boot you straight into a clean, mainline-like Debian environment!
+At this point, you should have a Debian system installed on NVMe and a recent U-Boot living in SPI flash.
 
 Happy hacking on RISC-V!
