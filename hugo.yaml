@@ -1,0 +1,85 @@
+baseURL: "https://shanduur.net/"
+locale: "en-US"
+title: "Stateless by design"
+theme: ["PaperMod"]
+copyright: "The content of this site is licensed under the [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)."
+
+enableRobotsTXT: true
+enableEmoji: true
+buildDrafts: false
+buildFuture: false
+buildExpired: false
+googleAnalytics: "G-K5SCNJ0RW1"
+
+pagination:
+  pagerSize: 10
+
+outputs:
+  home: ["HTML", "RSS"]
+
+minify:
+  disableXML: true
+  minifyOutput: true
+
+taxonomies:
+  tag: "tags"
+  series: "series"
+
+params:
+  env: "production"
+  title: "Stateless by design"
+  description: "Blog by Mateusz Urbanek"
+  author: "Mateusz Urbanek"
+  mainSections: ["posts"]
+  DateFormat: "2 January 2006"
+  defaultTheme: "auto"
+  disableThemeToggle: false
+  disableSpecial1stPost: true
+  disableScrollToTop: true
+  hideMeta: false
+  hideSummary: false
+  ShowReadingTime: true
+  ShowShareButtons: false
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: false
+  ShowCodeCopyButtons: true
+  ShowWordCount: false
+  ShowRssButtonInSectionTermList: false
+  ShowFullTextinRSS: true
+  UseHugoToc: true
+  showtoc: true
+  tocopen: false
+  comments: false
+
+  cover:
+    hidden: true
+    hiddenInList: true
+    hiddenInSingle: true
+    responsiveImages: false
+
+  editPost:
+    URL: "https://github.com/shanduur/shanduur.github.io/tree/main/content"
+    Text: "Suggest changes"
+    appendFilePath: true
+
+menu:
+  main:
+    - identifier: "posts"
+      name: "Posts"
+      url: "/posts/"
+      weight: 10
+    - identifier: "rss"
+      name: "RSS"
+      url: "/index.xml"
+      weight: 20
+    - identifier: "github"
+      name: "GitHub"
+      url: "https://github.com/shanduur"
+      weight: 30
+
+markup:
+  highlight:
+    noClasses: false
+  goldmark:
+    renderer:
+      unsafe: true
