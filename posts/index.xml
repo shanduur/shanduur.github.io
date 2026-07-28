@@ -1,1 +1,615 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Posts on Stateless by design</title><link>https://shanduur.net/posts/</link><description>Recent content in Posts on Stateless by design</description><generator>Hugo -- gohugo.io</generator><language>en</language><copyright>The content of this site is licensed under the [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)</copyright><lastBuildDate>Thu, 05 Mar 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://shanduur.net/posts/index.xml" rel="self" type="application/rss+xml"/><item><title>Debian on Milk-V Mars CM Lite</title><link>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</link><pubDate>Thu, 05 Mar 2026 00:00:00 +0000</pubDate><guid>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</guid><description>A detailed walkthrough on installing a mainline-like Debian environment on the RISC-V Milk-V Mars CM Lite using a Waveshare CM4 base board, and configuring U-Boot to boot directly from an NVMe drive.</description><media:content xmlns:media="http://search.yahoo.com/mrss/" url="https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/featured.webp"/></item><item><title>Using COSI v1alpha1 with Go apps</title><link>https://shanduur.net/posts/2025/0713-using-cosi-with-go-apps/</link><pubDate>Sun, 13 Jul 2025 00:00:00 +0000</pubDate><guid>https://shanduur.net/posts/2025/0713-using-cosi-with-go-apps/</guid><description>An approach to creating a wrapper that simplifies the way to store and retrieve information, all while maintaining flexibility of using different storage providers.</description><media:content xmlns:media="http://search.yahoo.com/mrss/" url="https://shanduur.net/posts/2025/0713-using-cosi-with-go-apps/featured.webp"/></item><item><title>Getting Started with COSI: Simplifying Object Storage in Kubernetes</title><link>https://shanduur.net/posts/2025/0706-cosi-getting-started/</link><pubDate>Sun, 06 Jul 2025 00:00:00 +0000</pubDate><guid>https://shanduur.net/posts/2025/0706-cosi-getting-started/</guid><description>Learn how to integrate the Container Object Storage Interface (COSI) with Kubernetes to automate object storage provisioning, access management, and application integration.</description><media:content xmlns:media="http://search.yahoo.com/mrss/" url="https://shanduur.net/posts/2025/0706-cosi-getting-started/featured.webp"/></item></channel></rss>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Posts on Stateless by design</title>
+    <link>https://shanduur.net/posts/</link>
+    <description>Recent content in Posts on Stateless by design</description>
+    <generator>Hugo</generator>
+    <language>en-US</language>
+    <copyright>The content of this site is licensed under the Creative Commons Attribution 4.0 International.</copyright>
+    <lastBuildDate>Thu, 05 Mar 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://shanduur.net/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Debian on Milk-V Mars CM Lite</title>
+      <link>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</link>
+      <pubDate>Thu, 05 Mar 2026 00:00:00 +0000</pubDate>
+      <guid>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</guid>
+      <description>A detailed walkthrough on installing a mainline-like Debian environment on the RISC-V Milk-V Mars CM Lite using a Waveshare CM4 base board, and configuring U-Boot to boot directly from an NVMe drive.</description>
+      <content:encoded><![CDATA[<p>Getting Debian running on a new RISC-V board is always a fun adventure. Recently, I&rsquo;ve been playing with the <strong>Milk-V Mars CM Lite</strong> - a compute module that brings the StarFive JH7110 RISC-V SoC to the familiar Raspberry Pi CM4 form factor.</p>
+<p>My goal was simple but specific: I wanted a clean Debian installation running entirely off a fast NVMe drive. For this build, I paired the Mars CM Lite with a <strong>Waveshare Compute Module 4/4S Mini Base Board (model B)</strong>.</p>
+<p>One important note about the &ldquo;Lite&rdquo; module: it has no onboard eMMC. That doesn&rsquo;t matter once we&rsquo;re booting from NVMe, but it does influence how you initially get U-Boot running on the board.</p>
+<p>If you&rsquo;re looking to replicate this setup, here is the complete, self-contained process I used to get everything up and running.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Before we start flashing images, there are two crucial hardware connections you need to make:</p>
+<ol>
+<li><strong>Network Connection:</strong> We will be using Debian Installer&rsquo;s <code>mini.efi</code> netboot image. This installer <em>requires</em> an active internet connection to download packages during the setup process. You cannot skip this. Plug an Ethernet cable directly from the Waveshare board into your network switch.</li>
+<li><strong>Serial Console (UART):</strong> To interrupt the boot process, manually boot from USB, and reconfigure U-Boot later, you will need a serial connection.</li>
+</ol>
+<p>I used an FT232R USB-to-serial adapter. On the Waveshare board&rsquo;s GPIO header, the wiring is:</p>
+<ul>
+<li><strong>GND:</strong> Pin 6</li>
+<li><strong>Board TX (to Adapter RX):</strong> Pin 8</li>
+<li><strong>Board RX (to Adapter TX):</strong> Pin 10</li>
+</ul>
+<p>To connect from my terminal, I used <code>tio</code> with the following command (adjust your <code>/dev/tty.*</code> path as needed):</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">tio /dev/tty.usbserial-A5069RR4 -o <span class="m">1</span>
+</span></span></code></pre></div><p>I also kept a vendor-flashed microSD card around as a &ldquo;known good&rdquo; recovery path. If your SPI flash is blank or you soft-brick your bootloader while experimenting, booting from a vendor image can be a quick way back to a U-Boot prompt.</p>
+<h2 id="correct-eeprom-data-optional-but-recommended">Correct EEPROM Data (Optional but Recommended)</h2>
+<p>Some Milk-V Mars CM Lite units shipped from the factory with incorrect or uninitialized EEPROM data (for example, wrong values for DRAM size and the eMMC size field). It is highly recommended to fix this before updating U-Boot, as U-Boot relies on these values to properly initialize the hardware.</p>
+<p>According to the excellent resource at <a href="https://freeshell.de/e/riscv64/vf2eeprom/">freeshell.de</a>, you can rewrite the EEPROM using the U-Boot console.</p>
+<ol>
+<li>Boot the board with your vendor-flashed SD card and watch the serial console.</li>
+<li><strong>Hit any key to interrupt the autoboot</strong> and drop into the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>Run the following commands to write the correct EEPROM values.</p>
+<p><em>Note: The command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC (for the non-Lite module), and 00001234 represents SN. For CM Lite, the eMMC value should reflect that there is no onboard eMMC. Refer to the <a href="https://milkv.io/docs/mars/compute-module/update-eeprom">update EEPROM guide</a> to construct the proper string for your specific module and enable write access to EEPROM.</em></p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">mac product_id MARC-V10-2340-D004E032-00001234
+</span></span><span class="line"><span class="cl">mac write_eeprom
+</span></span></code></pre></div><p>Once the EEPROM is corrected, you can proceed to updating U-Boot.</p>
+<h2 id="update-u-boot">Update U-Boot</h2>
+<p>The stock/vendor U-Boot that ships on the Mars CM is old and heavily board-patched. In practice that means rough edges with EFI booting (needed for Debian&rsquo;s netboot <code>mini.efi</code>), less reliable NVMe enumeration, and confusing environment defaults.</p>
+<p>For this walkthrough, we want a recent upstream-ish U-Boot in SPI flash so we can:</p>
+<ul>
+<li>Boot the Debian Installer EFI image directly from U-Boot</li>
+<li>Use U-Boot&rsquo;s standard distro-boot logic to find GRUB on the NVMe</li>
+<li>Prefer NVMe early in the boot order</li>
+</ul>
+<ol>
+<li>Download the latest U-Boot release for the StarFive/VisionFive2 family (which supports the Mars CM) from <a href="https://freeshell.de/e/riscv64/vf2eeprom/">this repository</a>. I&rsquo;ve been using the <a href="https://freeshell.de/e/riscv64/vf2eeprom/u-boot-v2026.04rc3-starfive-visionfive2.zip"><code>v2026.04-rc3</code></a> which is a pre-release build, but please use latest available - <code>v2026.04-rc3</code> or later is needed for this tutorial.</li>
+<li>Extract the downloaded ZIP file to get <code>u-boot-spl.bin.normal.out</code> and <code>u-boot.itb</code>.</li>
+<li>Change your working directory to the place where the extracted files are located and start the serial console.
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="nb">cd</span> path/to/u-boot
+</span></span><span class="line"><span class="cl">tio /dev/tty.usbserial-A5069RR4 -o <span class="m">1</span>
+</span></span></code></pre></div></li>
+<li>Boot the board (using whatever currently boots on your setup: a vendor SD card, or an existing U-Boot in SPI).</li>
+<li><strong>Hit any key to interrupt the autoboot</strong> and drop into the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>We will transfer the new binaries over the serial connection using Y-Modem and write them to the SPI Flash storage.</p>
+<p>At this point we&rsquo;re going to &ldquo;sneak&rdquo; the new U-Boot binaries into the board over the serial console. The mental model is straightforward:</p>
+<ol>
+<li>U-Boot receives a file into RAM at <code>$loadaddr</code>.</li>
+<li>The received size is exposed as <code>$filesize</code>.</li>
+<li>We then write that RAM buffer into the boot storage using <code>sf update</code> (as exposed by this U-Boot build).</li>
+</ol>
+<p>The one detail that matters: make sure U-Boot is already sitting in a receive command before you start the transfer from <code>tio</code>. Otherwise you&rsquo;ll just watch the host side time out.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>X</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:51:55.164] Please enter which X modem protocol to use:
+[19:51:55.164]  (0) XMODEM-1K send
+[19:51:55.164]  (1) XMODEM-CRC send
+[19:51:55.164]  (2) XMODEM-CRC receive
+</code></pre><p>Select <kbd>0</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:51:55.928] Send file with XMODEM-1K
+[19:51:55.928] Enter file name: 
+</code></pre><p>Write <code>u-boot-spl.bin.normal.out</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:52:10.856] Sending file &#39;u-boot-spl.bin.normal.out&#39;
+[19:52:10.856] Press any key to abort transfer
+...
+[19:52:24.880] Done
+U-Boot SPL 2025.01-3 (Apr 08 2025 - 23:07:41 +0000)
+DDR version: dc2e84f0.
+Trying to boot from UART
+CCC
+</code></pre><p>The SPL we just pushed is now running, and it immediately switches into &ldquo;UART boot&rdquo; mode. That <code>CCC</code> spam is a good sign: it means the board is sitting there waiting for the next stage to arrive over the serial link.</p>
+<p>Next, we send <code>u-boot.itb</code>, which contains the full U-Boot image we actually want to run.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:52:42.978] Send file with YMODEM
+[19:52:42.978] Enter file name: 
+</code></pre><p>Write <code>u-boot.itb</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:53:13.244] Sending file &#39;u-boot.itb&#39;
+[19:53:13.244] Press any key to abort transfer
+</code></pre><p>After <code>u-boot.itb</code> is received, SPL hands off into full U-Boot. From here on, we&rsquo;re no longer &ldquo;booting a one-off image&rdquo; - we&rsquo;re using a running U-Boot to update the bootloader stored on the SPI flash.</p>
+<p>One thing that can be confusing when you follow a transcript: the receive step (<code>loady</code>) has to be active on the board before you start sending from <code>tio</code>. If you&rsquo;re reproducing this live, the reliable pattern is: type the <code>loady ... &amp;&amp; sf update ...</code> command first (it will wait and print <code>CCC</code>), then start the YMODEM send from <code>tio</code>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">sf probe
+</span></span></code></pre></div><p>Now that we&rsquo;re running the newer U-Boot, we&rsquo;ll flash it permanently to the module&rsquo;s SPI.</p>
+<p>The layout we use here matches the common VisionFive2/Mars CM convention:</p>
+<ul>
+<li>SPL at SPI offset <code>0x000000</code></li>
+<li>U-Boot proper (FIT/ITB) at SPI offset <code>0x100000</code></li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">loady <span class="nv">$loadaddr</span> <span class="o">&amp;&amp;</span> sf update <span class="nv">$loadaddr</span> <span class="m">0</span> <span class="nv">$filesize</span>
+</span></span></code></pre></div><p>Once the transfer completes, the SPL binary is now in memory. The <code>loady $loadaddr</code> part is the receive step (it places the incoming data at <code>$loadaddr</code> and sets <code>$filesize</code>). The <code>sf update</code> part then copies that RAM buffer into the boot storage at a fixed offset.</p>
+<p>Do not power-cycle the board while <code>sf update</code> is running.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:56:10.630] Send file with YMODEM
+[19:56:10.630] Enter file name: 
+</code></pre><p>Write <code>u-boot-spl.bin.normal.out</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:56:24.803] Sending file &#39;u-boot-spl.bin.normal.out&#39;
+[19:56:24.803] Press any key to abort transfer
+</code></pre><p>With SPL written, we do the same for <code>u-boot.itb</code> (U-Boot proper) at offset <code>0x100000</code>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">loady <span class="nv">$loadaddr</span> <span class="o">&amp;&amp;</span> sf update <span class="nv">$loadaddr</span> <span class="m">100000</span> <span class="nv">$filesize</span>
+</span></span></code></pre></div><p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:57:12.273] Send file with YMODEM
+[19:57:12.273] Enter file name: 
+</code></pre><p>Write <code>u-boot.itb</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:58:01.384] Sending file &#39;u-boot.itb&#39;
+[19:58:01.384] Press any key to abort transfer
+</code></pre><p>Finally, wipe the persisted U-Boot environment. After swapping bootloader binaries, keeping an old vendor environment around can lead to confusing behavior (stale <code>bootcmd</code>, unexpected boot targets, and defaults that no longer make sense). <code>env erase</code> resets things back to the compiled-in defaults so we can build a clean NVMe boot flow in the next steps.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">env erase
+</span></span></code></pre></div><h2 id="install-debian-to-nvme">Install Debian to NVMe</h2>
+<p>With U-Boot updated, installing Debian is straightforward: boot the Debian Installer&rsquo;s EFI binary from U-Boot, then install onto the NVMe.</p>
+<ol>
+<li>Insert the NVMe drive.</li>
+<li>Make sure Ethernet is connected.</li>
+<li>Boot and interrupt autoboot to get the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>Then run:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">dhcp <span class="o">&amp;&amp;</span> wget https://deb.debian.org/debian/dists/trixie/main/installer-riscv64/current/images/netboot/mini.efi <span class="o">&amp;&amp;</span> bootefi <span class="nv">$loadaddr</span>
+</span></span></code></pre></div><p>Proceed through the installer normally.</p>
+<p>Important: when the installer asks about installing GRUB to the fallback &ldquo;removable media path&rdquo;, answer <strong>Yes</strong>.</p>
+<pre tabindex="0"><code class="language-terminal" data-lang="terminal">It seems that this computer is configured to boot via EFI, but maybe
+that configuration will not work for booting from the hard drive.
+Some EFI firmware implementations do not meet the EFI specification
+(i.e. they are buggy!) and do not support proper configuration of
+boot options from system hard drives.
+
+A workaround for this problem is to install an extra copy of the EFI
+version of the GRUB boot loader to a fallback location, the
+&#34;removable media path&#34;. Almost all EFI systems, no matter how buggy,
+will boot GRUB that way.
+
+[...]
+</code></pre><p>That fallback path (<code>EFI/BOOT/BOOTRISCV64.EFI</code>) is what U-Boot typically finds during its EFI scan.</p>
+<h2 id="wrapping-up">Wrapping Up</h2>
+<p>At this point, you should have a Debian system installed on NVMe and a recent U-Boot living in SPI flash.</p>
+<p>Happy hacking on RISC-V!</p>
+]]></content:encoded>
+    </item>
+    <item>
+      <title>Using COSI v1alpha1 with Go apps</title>
+      <link>https://shanduur.net/posts/2025/0713-using-cosi-with-go-apps/</link>
+      <pubDate>Sun, 13 Jul 2025 00:00:00 +0000</pubDate>
+      <guid>https://shanduur.net/posts/2025/0713-using-cosi-with-go-apps/</guid>
+      <description>An approach to creating a wrapper that simplifies the way to store and retrieve information, all while maintaining flexibility of using different storage providers.</description>
+      <content:encoded><![CDATA[<blockquote>
+<p>Technical portion of this article is based on <code>v1alpha1</code> COSI specification.</p>
+</blockquote>
+<p>In today&rsquo;s cloud-native landscape, managing storage efficiently is paramount for scalable and resilient applications. Object storage provides a highly available, durable, and often a cost-effective way to store unstructured data such as media files, backups, and logs. Unlike traditional file or block storage, object storage organizes data as objects within buckets, making it easier to manage at scale while offering inherent benefits like metadata tagging and integration with distributed systems.</p>
+<p><a href="https://kubernetes-sigs.github.io/container-object-storage-interface">Container Object Storage Interface (COSI)</a> is an emerging standard that provides a unified abstraction layer that enables developers and operators to interact with various object storage systems using a consistent API. It allows organizations simplify the process of integrating and managing object storage backends across diverse environments, whether on-premises, in the cloud or in hybrid deployments.</p>
+<h2 id="configuration-structure">Configuration Structure</h2>
+<p>The Config struct is the primary configuration object for the storage package. It encapsulates all necessary settings for interacting with different storage providers. This design ensures that all configuration details are centralized and easily maintainable, allowing your application to switch storage backends with minimal code changes.</p>
+<p>The nested <code>Spec</code> struct defines both generic and provider-specific parameters:</p>
+<ul>
+<li><code>BucketName</code>: Specifies the target storage container or bucket. This value directs where the data will be stored or retrieved.</li>
+<li><code>AuthenticationType</code>: Indicates the method of authentication (either <code>Key</code> or <code>IAM</code>). This ensures that the correct credentials are used when accessing a storage provider.</li>
+<li><code>Protocols</code>: An array of strings that informs the system which storage protocols (e.g. <code>S3</code> or <code>Azure</code>) are supported. The factory uses this to determine the appropriate client to initialize.</li>
+<li><code>SecretS3</code>/<code>SecretAzure</code>: These fields hold pointers to the respective secret structures needed for authenticating with S3 or Azure services. Their presence is conditional on the protocols configured.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">storage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Config</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Spec</span><span class="w"> </span><span class="nx">Spec</span><span class="w"> </span><span class="s">`json:&#34;spec&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Spec</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">BucketName</span><span class="w">         </span><span class="kt">string</span><span class="w">             </span><span class="s">`json:&#34;bucketName&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">AuthenticationType</span><span class="w"> </span><span class="kt">string</span><span class="w">             </span><span class="s">`json:&#34;authenticationType&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Protocols</span><span class="w">          </span><span class="p">[]</span><span class="kt">string</span><span class="w">           </span><span class="s">`json:&#34;protocols&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">SecretS3</span><span class="w">           </span><span class="o">*</span><span class="nx">s3</span><span class="p">.</span><span class="nx">SecretS3</span><span class="w">       </span><span class="s">`json:&#34;secretS3,omitempty&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">SecretAzure</span><span class="w">        </span><span class="o">*</span><span class="nx">azure</span><span class="p">.</span><span class="nx">SecretAzure</span><span class="w"> </span><span class="s">`json:&#34;secretAzure,omitempty&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h3 id="azure-secret-structure">Azure Secret Structure</h3>
+<p>The <code>SecretAzure</code> struct holds authentication credentials for accessing Azure-based storage services. It is essential when interacting with Azure Blob storage, as it contains a shared access token along with an expiration timestamp. The inclusion of the <code>ExpiryTimestamp</code> allows your application to check token validity.</p>
+<blockquote>
+<p>While current COSI implementation doesn&rsquo;t auto-renew tokens, the <code>ExpiryTimestamp</code> provides hooks for future refresh logic.</p>
+</blockquote>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage/azure&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">azure</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">SecretAzure</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">AccessToken</span><span class="w">     </span><span class="kt">string</span><span class="w">    </span><span class="s">`json:&#34;accessToken&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">ExpiryTimestamp</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Time</span><span class="w"> </span><span class="s">`json:&#34;expiryTimeStamp&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h3 id="s3-secret-structure">S3 Secret Structure</h3>
+<p>The <code>SecretS3</code> struct holds authentication credentials for accessing S3-compatible storage services. This struct includes the endpoint, region, and access credentials required to securely interact with the S3 service. By isolating these values into a dedicated structure, the design helps maintain clear separation between configuration types, thus enhancing code clarity.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage/s3&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">s3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">SecretS3</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Endpoint</span><span class="w">        </span><span class="kt">string</span><span class="w"> </span><span class="s">`json:&#34;endpoint&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Region</span><span class="w">          </span><span class="kt">string</span><span class="w"> </span><span class="s">`json:&#34;region&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">AccessKeyID</span><span class="w">     </span><span class="kt">string</span><span class="w"> </span><span class="s">`json:&#34;accessKeyID&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">AccessSecretKey</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="s">`json:&#34;accessSecretKey&#34;`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h2 id="factory">Factory</h2>
+<p>The factory pattern<sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup> is used to instantiate the appropriate storage backend based on the provided configuration. We will hide the implementation behind the interface.</p>
+<p>The factory function examines the configuration’s <code>Protocols</code> array and validates the <code>AuthenticationType</code> along with the corresponding secret. It then returns a concrete implementation of the Storage interface. This method of instantiation promotes extensibility, making it easier to support additional storage protocols in the future, as the COSI specification evolves.</p>
+<p>Here is a minimal interface that supports only basic <code>Delete</code>/<code>Get</code>/<code>Put</code> operations:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Storage</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nf">Delete</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nf">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">wr</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Writer</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nf">Put</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Reader</span><span class="p">,</span><span class="w"> </span><span class="nx">size</span><span class="w"> </span><span class="kt">int64</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>Our implementation of factory method can be defined as following:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">storage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;fmt&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;slices&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;strings&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;example.com/pkg/storage/azure&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;example.com/pkg/storage/s3&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="nx">config</span><span class="w"> </span><span class="nx">Config</span><span class="p">,</span><span class="w"> </span><span class="nx">ssl</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">Storage</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">slices</span><span class="p">.</span><span class="nf">ContainsFunc</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">Protocols</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">s</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">EqualFold</span><span class="p">(</span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;s3&#34;</span><span class="p">)</span><span class="w"> </span><span class="p">})</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">strings</span><span class="p">.</span><span class="nf">EqualFold</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">AuthenticationType</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;key&#34;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;invalid authentication type for s3&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s3secret</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">SecretS3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">s3secret</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;s3 secret missing&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">s3</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">BucketName</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="nx">s3secret</span><span class="p">,</span><span class="w"> </span><span class="nx">ssl</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">slices</span><span class="p">.</span><span class="nf">ContainsFunc</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">Protocols</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">s</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">EqualFold</span><span class="p">(</span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;azure&#34;</span><span class="p">)</span><span class="w"> </span><span class="p">})</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">strings</span><span class="p">.</span><span class="nf">EqualFold</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">AuthenticationType</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;key&#34;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;invalid authentication type for azure&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">azureSecret</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">SecretAzure</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">azureSecret</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;azure secret missing&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">azure</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">BucketName</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="nx">azureSecret</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;invalid protocol (%v)&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">config</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">Protocols</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h2 id="clients">Clients</h2>
+<p>As we alredy defined the factory and uppermost configuration, let&rsquo;s get into the details of the clients, that will implement the <code>Storage</code> interface.</p>
+<h3 id="s3">S3</h3>
+<p>In the implementation of S3 client, we will use <a href="https://github.com/minio/minio-go">MinIO</a> client library, as it&rsquo;s more lightweight than <a href="https://github.com/aws/aws-sdk-go-v2">AWS SDK</a>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage/s3&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">s3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;context&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;fmt&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;io&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;net/http&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;time&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;github.com/minio/minio-go/v7&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;github.com/minio/minio-go/v7/pkg/credentials&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Client</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">s3cli</span><span class="w">      </span><span class="o">*</span><span class="nx">minio</span><span class="p">.</span><span class="nx">Client</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">bucketName</span><span class="w"> </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="nx">bucketName</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">s3secret</span><span class="w"> </span><span class="nx">SecretS3</span><span class="p">,</span><span class="w"> </span><span class="nx">ssl</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">Client</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">s3cli</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">minio</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">s3secret</span><span class="p">.</span><span class="nx">Endpoint</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">minio</span><span class="p">.</span><span class="nx">Options</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">Creds</span><span class="p">:</span><span class="w">  </span><span class="nx">credentials</span><span class="p">.</span><span class="nf">NewStaticV4</span><span class="p">(</span><span class="nx">s3secret</span><span class="p">.</span><span class="nx">AccessKeyID</span><span class="p">,</span><span class="w"> </span><span class="nx">s3secret</span><span class="p">.</span><span class="nx">AccessSecretKey</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="p">),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">Region</span><span class="p">:</span><span class="w"> </span><span class="nx">s3secret</span><span class="p">.</span><span class="nx">Region</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">Secure</span><span class="p">:</span><span class="w"> </span><span class="nx">ssl</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;unable to create client: %w&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">Client</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s3cli</span><span class="p">:</span><span class="w">      </span><span class="nx">s3cli</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">bucketName</span><span class="p">:</span><span class="w"> </span><span class="nx">bucketName</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">},</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Delete</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">s3cli</span><span class="p">.</span><span class="nf">RemoveObject</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">bucketName</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">minio</span><span class="p">.</span><span class="nx">RemoveObjectOptions</span><span class="p">{})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">wr</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Writer</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">obj</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">s3cli</span><span class="p">.</span><span class="nf">GetObject</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">bucketName</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">minio</span><span class="p">.</span><span class="nx">GetObjectOptions</span><span class="p">{})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nf">Copy</span><span class="p">(</span><span class="nx">wr</span><span class="p">,</span><span class="w"> </span><span class="nx">obj</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Put</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Reader</span><span class="p">,</span><span class="w"> </span><span class="nx">size</span><span class="w"> </span><span class="kt">int64</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">s3cli</span><span class="p">.</span><span class="nf">PutObject</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">bucketName</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="nx">size</span><span class="p">,</span><span class="w"> </span><span class="nx">minio</span><span class="p">.</span><span class="nx">PutObjectOptions</span><span class="p">{})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h3 id="azure-blob">Azure Blob</h3>
+<p>In the implementation of Azure client, we will use <a href="https://github.com/Azure/azure-sdk-for-go">Azure SDK</a> client library. Note, that the configuration is done with <code>NoCredentials</code> client, as the Azure secret contains shared access signatures (SAS)<sup id="fnref:2"><a href="#fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// import &#34;example.com/pkg/storage/azure&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">azure</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;context&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;errors&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;fmt&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;io&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;time&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;github.com/Azure/azure-sdk-for-go/sdk/storage/azblob&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Client</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">azCli</span><span class="w">         </span><span class="o">*</span><span class="nx">azblob</span><span class="p">.</span><span class="nx">Client</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">containerName</span><span class="w"> </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="nx">containerName</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">azureSecret</span><span class="w"> </span><span class="nx">SecretAzure</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">Client</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">azCli</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">azblob</span><span class="p">.</span><span class="nf">NewClientWithNoCredential</span><span class="p">(</span><span class="nx">azureSecret</span><span class="p">.</span><span class="nx">AccessToken</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;unable to create client: %w&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">Client</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">azCli</span><span class="p">:</span><span class="w">         </span><span class="nx">azCli</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">containerName</span><span class="p">:</span><span class="w"> </span><span class="nx">containerName</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">},</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Delete</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">azCli</span><span class="p">.</span><span class="nf">DeleteBlob</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">containerName</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Get</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">wr</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Writer</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">stream</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">azCli</span><span class="p">.</span><span class="nf">DownloadStream</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">containerName</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;unable to get download stream: %w&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nf">Copy</span><span class="p">(</span><span class="nx">wr</span><span class="p">,</span><span class="w"> </span><span class="nx">stream</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Client</span><span class="p">)</span><span class="w"> </span><span class="nf">Put</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="w"> </span><span class="nx">io</span><span class="p">.</span><span class="nx">Reader</span><span class="p">,</span><span class="w"> </span><span class="nx">size</span><span class="w"> </span><span class="kt">int64</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">azCli</span><span class="p">.</span><span class="nf">UploadStream</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">containerName</span><span class="p">,</span><span class="w"> </span><span class="nx">blobName</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h2 id="summing-up">Summing up</h2>
+<p>Once all components are in place, using the storage package in your application becomes straightforward. The process starts with reading a JSON configuration file, which is then decoded into the <code>Config</code> struct. The factory method selects and initializes the appropriate storage client based on the configuration, enabling seamless integration with either S3 or Azure storage.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;encoding/json&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;os&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;example.com/pkg/storage&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">example</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">f</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">os</span><span class="p">.</span><span class="nf">Open</span><span class="p">(</span><span class="s">&#34;/opt/cosi/BucketInfo.json&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nb">panic</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nf">Close</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">cfg</span><span class="w"> </span><span class="nx">storage</span><span class="p">.</span><span class="nx">Config</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">f</span><span class="p">).</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nb">panic</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">storage</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">cfg</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nb">panic</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// use client Put/Get/Delete</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><div class="footnotes" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn:1">
+<p><a href="https://en.wikipedia.org/wiki/Factory_method_pattern">https://en.wikipedia.org/wiki/Factory_method_pattern</a>&#160;<a href="#fnref:1" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:2">
+<p><a href="https://en.wikipedia.org/wiki/Factory_method_pattern">https://learn.microsoft.com/en-us/azure/storage/common/storage-sas-overview</a>&#160;<a href="#fnref:2" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+</ol>
+</div>
+]]></content:encoded>
+    </item>
+    <item>
+      <title>Getting Started with COSI: Simplifying Object Storage in Kubernetes</title>
+      <link>https://shanduur.net/posts/2025/0706-cosi-getting-started/</link>
+      <pubDate>Sun, 06 Jul 2025 00:00:00 +0000</pubDate>
+      <guid>https://shanduur.net/posts/2025/0706-cosi-getting-started/</guid>
+      <description>Learn how to integrate the Container Object Storage Interface (COSI) with Kubernetes to automate object storage provisioning, access management, and application integration.</description>
+      <content:encoded><![CDATA[<p>The <strong>Container Object Storage Interface (COSI)</strong> is a Kubernetes-native standard for managing object storage buckets and credentials. By abstracting provider-specific details, COSI enables dynamic provisioning, secure access management, and seamless integration with applications. In this guide, we’ll deploy COSI on a Kubernetes cluster, configure a Linode driver, and deploy a sample app that leverages automated object storage workflows.</p>
+<h2 id="installation">Installation</h2>
+<p>COSI requires a controller and Custom Resource Definitions (CRDs) to extend Kubernetes&rsquo; API for object storage operations. Install them using the official Helm chart:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">kubectl apply <span class="se">\
+</span></span></span><span class="line"><span class="cl">  -k <span class="s1">&#39;https://github.com/kubernetes-sigs/container-object-storage-interface//?ref=v0.2.1&#39;</span>
+</span></span></code></pre></div><p>This deploys the COSI controller and registers CRDs like <code>BucketClass</code>, <code>BucketClaim</code>, and <code>BucketAccess</code>.</p>
+<p>Alternatively, you can preview the resources before applying them:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">kubectl apply <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --dry-run<span class="o">=</span>client -o<span class="o">=</span>yaml <span class="se">\
+</span></span></span><span class="line"><span class="cl">  -k <span class="s1">&#39;https://github.com/kubernetes-sigs/container-object-storage-interface//?ref=v0.2.1&#39;</span>
+</span></span></code></pre></div><h2 id="cosi-driver-for-linode">COSI Driver for Linode</h2>
+<p>Providers implement COSI through drivers. Here, we’ll use the <strong>Linode COSI Driver</strong> to manage Linode Object Storage buckets:</p>
+<ol>
+<li>
+<p>Add the Helm repository:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">helm repo add linode-cosi-driver <span class="se">\
+</span></span></span><span class="line"><span class="cl">    https://linode.github.io/linode-cosi-driver
+</span></span></code></pre></div></li>
+<li>
+<p>Install the driver, substituting your Linode API token. The token must be configured with the following permissions <code>Object Storage - Read/Write</code>. Make sure to replace <code>&lt;your-linode-api-token&gt;</code> with your actual token:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">helm install linode-cosi-driver <span class="se">\
+</span></span></span><span class="line"><span class="cl">    linode-cosi-driver/linode-cosi-driver <span class="se">\
+</span></span></span><span class="line"><span class="cl">    --set<span class="o">=</span><span class="nv">apiToken</span><span class="o">=</span><span class="s2">&#34;&lt;your-linode-api-token&gt;&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">    --namespace<span class="o">=</span>linode-cosi-driver <span class="se">\
+</span></span></span><span class="line"><span class="cl">    --create-namespace
+</span></span></code></pre></div></li>
+</ol>
+<h2 id="classes">Classes</h2>
+<h3 id="define-a-bucketclass">Define a BucketClass</h3>
+<p>A <code>BucketClass</code> specifies storage policies. Below, we create two classes - one that deletes buckets automatically and another that retains them:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="c"># delete-policy.yaml</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.k8s.io/v1alpha1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">BucketClass</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">linode-objectstorage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">driverName</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.cosi.linode.com</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Delete</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">parameters</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">cosi.linode.com/v1/region</span><span class="p">:</span><span class="w"> </span><span class="l">us-east</span><span class="w">
+</span></span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="c"># retain-policy.yaml</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.k8s.io/v1alpha1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">BucketClass</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">linode-objectstorage-retain</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">driverName</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.cosi.linode.com</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Retain</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">parameters</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">cosi.linode.com/v1/region</span><span class="p">:</span><span class="w"> </span><span class="l">us-east</span><span class="w">
+</span></span></span></code></pre></div><h3 id="define-a-bucketaccessclass">Define a BucketAccessClass</h3>
+<p>A <code>BucketAccessClass</code> controls how applications authenticate to buckets. Here, we use API keys:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="c"># bucket-access-class.yaml</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.k8s.io/v1alpha1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">BucketAccessClass</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">linode-objectstorage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">driverName</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.cosi.linode.com</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">authenticationType</span><span class="p">:</span><span class="w"> </span><span class="l">Key</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">parameters</span><span class="p">:</span><span class="w"> </span>{}<span class="w">
+</span></span></span></code></pre></div><p>Apply these manifests with <code>kubectl apply -f &lt;file&gt;.yaml</code>.</p>
+<h2 id="sample-application">Sample Application</h2>
+<p>Let’s deploy an app that writes logs to a COSI-managed bucket. The deployment includes:</p>
+<ul>
+<li>A <code>logger</code> sidecar container that generates logs.</li>
+<li>An <code>uploader</code> container that syncs logs to object storage.</li>
+<li>A <code>BucketClaim</code> to request a bucket.</li>
+<li>A <code>BucketAccess</code> to manage credentials.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="c"># cosi-resources.yaml</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.k8s.io/v1alpha1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">BucketAccess</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample-app</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">bucketAccessClassName</span><span class="p">:</span><span class="w"> </span><span class="l">linode-objectstorage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">bucketClaimName</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample-app</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">credentialsSecretName</span><span class="p">:</span><span class="w"> </span><span class="l">s3-credentials</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l">S3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nn">---</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">objectstorage.k8s.io/v1alpha1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">BucketClaim</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample-app</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">bucketClassName</span><span class="p">:</span><span class="w"> </span><span class="l">linode-objectstorage</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">protocols</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="l">S3</span><span class="w">
+</span></span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="c"># cosi-sample-app.yaml</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Namespace</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nn">---</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">apps/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Deployment</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample-app</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-sample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">selector</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l">uploader</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">labels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l">uploader</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">args</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- --<span class="l">upload-interval=240</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- --<span class="l">file=/mnt/logs/log.txt</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">ghcr.io/anza-labs/cosi-sample-app:latest</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">imagePullPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">IfNotPresent</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">uploader</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">resources</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">requests</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l">100m</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l">256Mi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">securityContext</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">readOnlyRootFilesystem</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">runAsNonRoot</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/mnt/logs</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">logs</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/cosi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-secret</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">initContainers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">args</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- -<span class="l">c</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          #!/bin/ash
+</span></span></span><span class="line"><span class="cl"><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          while true; do
+</span></span></span><span class="line"><span class="cl"><span class="sd">              echo &#34;$(date +&#39;%Y-%m-%d %H:%M:%S&#39;) - Log entry&#34; | tee -a &#34;$LOG_FILE&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">              # Check file size and trim if needed
+</span></span></span><span class="line"><span class="cl"><span class="sd">              if [ -f &#34;$LOG_FILE&#34; ] &amp;&amp; [ $(stat -c %s &#34;$LOG_FILE&#34;) -gt $MAX_SIZE ]; then
+</span></span></span><span class="line"><span class="cl"><span class="sd">                  echo &#34;$(date +&#39;%Y-%m-%d %H:%M:%S&#39;) - Rotating&#34; | tee -a &#34;$LOG_FILE.tmp&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">                  mv &#34;$LOG_FILE.tmp&#34; &#34;$LOG_FILE&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">              fi
+</span></span></span><span class="line"><span class="cl"><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">              sleep 10
+</span></span></span><span class="line"><span class="cl"><span class="sd">          done</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="l">sh</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">env</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">LOG_FILE</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l">/mnt/logs/log.txt</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">MAX_SIZE</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s2">&#34;4194304&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">alpine:3.21</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">logger</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">resources</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">requests</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l">50m</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l">64Mi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Always</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">securityContext</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">readOnlyRootFilesystem</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">runAsGroup</span><span class="p">:</span><span class="w"> </span><span class="m">1000</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">runAsNonRoot</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">runAsUser</span><span class="p">:</span><span class="w"> </span><span class="m">1000</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/mnt/logs</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">logs</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">volumes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">cosi-secret</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">secret</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">secretName</span><span class="p">:</span><span class="w"> </span><span class="l">s3-credentials</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">emptyDir</span><span class="p">:</span><span class="w"> </span>{}<span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">logs</span><span class="w">
+</span></span></span></code></pre></div><h3 id="key-components-explained">Key Components Explained:</h3>
+<ol>
+<li><strong>BucketClaim</strong>: Requests a bucket using the <code>linode-objectstorage</code> class.</li>
+<li><strong>BucketAccess</strong>: References the <code>BucketAccessClass</code> to generate credentials stored in a <code>s3-credentials</code> Secret.</li>
+<li><strong>Volumes</strong>: The <code>cosi-secret</code> volume mounts the credentials, while the <code>logs</code> volume is a temporary <code>emptyDir</code> for log storage.</li>
+</ol>
+<h2 id="benefits">Benefits</h2>
+<h3 id="without-cosi">Without COSI</h3>
+<ul>
+<li><strong>Manual Steps</strong>: Create buckets via provider UIs/CLIs, manage credentials, and hardcode them in manifests.</li>
+<li><strong>Risk</strong>: Credentials exposed in code; no lifecycle management.</li>
+</ul>
+<h3 id="with-cosi">With COSI</h3>
+<ul>
+<li><strong>Dynamic Provisioning</strong>: Buckets and credentials created on-demand via Kubernetes API.</li>
+<li><strong>Automated Cleanup</strong>: Set <code>deletionPolicy: Delete</code> to remove unused buckets.</li>
+<li><strong>Security</strong>: Credentials injected via Secrets, never stored in plaintext.</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>COSI brings the flexibility of Kubernetes-native resource management to object storage. By defining policies through <code>BucketClass</code> and <code>BucketAccessClass</code>, teams can streamline storage operations while enforcing security and lifecycle rules. The Linode driver example demonstrates how easily COSI integrates with cloud providers, but the same principles apply to AWS S3, Google Cloud Storage, and more.</p>
+<p>Ready to try it? Deploy the sample app and watch COSI automate the heavy lifting! 🚀</p>
+]]></content:encoded>
+    </item>
+  </channel>
+</rss>

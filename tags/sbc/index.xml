@@ -1,1 +1,158 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>SBC on Stateless by design</title><link>https://shanduur.net/tags/sbc/</link><description>Recent content in SBC on Stateless by design</description><generator>Hugo -- gohugo.io</generator><language>en</language><copyright>The content of this site is licensed under the [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)</copyright><lastBuildDate>Thu, 05 Mar 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://shanduur.net/tags/sbc/index.xml" rel="self" type="application/rss+xml"/><item><title>Debian on Milk-V Mars CM Lite</title><link>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</link><pubDate>Thu, 05 Mar 2026 00:00:00 +0000</pubDate><guid>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</guid><description>A detailed walkthrough on installing a mainline-like Debian environment on the RISC-V Milk-V Mars CM Lite using a Waveshare CM4 base board, and configuring U-Boot to boot directly from an NVMe drive.</description><media:content xmlns:media="http://search.yahoo.com/mrss/" url="https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/featured.webp"/></item></channel></rss>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>SBC on Stateless by design</title>
+    <link>https://shanduur.net/tags/sbc/</link>
+    <description>Recent content in SBC on Stateless by design</description>
+    <generator>Hugo</generator>
+    <language>en-US</language>
+    <copyright>The content of this site is licensed under the Creative Commons Attribution 4.0 International.</copyright>
+    <lastBuildDate>Thu, 05 Mar 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://shanduur.net/tags/sbc/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Debian on Milk-V Mars CM Lite</title>
+      <link>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</link>
+      <pubDate>Thu, 05 Mar 2026 00:00:00 +0000</pubDate>
+      <guid>https://shanduur.net/posts/2026/0305-debian-milkv-mars-cm-lite/</guid>
+      <description>A detailed walkthrough on installing a mainline-like Debian environment on the RISC-V Milk-V Mars CM Lite using a Waveshare CM4 base board, and configuring U-Boot to boot directly from an NVMe drive.</description>
+      <content:encoded><![CDATA[<p>Getting Debian running on a new RISC-V board is always a fun adventure. Recently, I&rsquo;ve been playing with the <strong>Milk-V Mars CM Lite</strong> - a compute module that brings the StarFive JH7110 RISC-V SoC to the familiar Raspberry Pi CM4 form factor.</p>
+<p>My goal was simple but specific: I wanted a clean Debian installation running entirely off a fast NVMe drive. For this build, I paired the Mars CM Lite with a <strong>Waveshare Compute Module 4/4S Mini Base Board (model B)</strong>.</p>
+<p>One important note about the &ldquo;Lite&rdquo; module: it has no onboard eMMC. That doesn&rsquo;t matter once we&rsquo;re booting from NVMe, but it does influence how you initially get U-Boot running on the board.</p>
+<p>If you&rsquo;re looking to replicate this setup, here is the complete, self-contained process I used to get everything up and running.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Before we start flashing images, there are two crucial hardware connections you need to make:</p>
+<ol>
+<li><strong>Network Connection:</strong> We will be using Debian Installer&rsquo;s <code>mini.efi</code> netboot image. This installer <em>requires</em> an active internet connection to download packages during the setup process. You cannot skip this. Plug an Ethernet cable directly from the Waveshare board into your network switch.</li>
+<li><strong>Serial Console (UART):</strong> To interrupt the boot process, manually boot from USB, and reconfigure U-Boot later, you will need a serial connection.</li>
+</ol>
+<p>I used an FT232R USB-to-serial adapter. On the Waveshare board&rsquo;s GPIO header, the wiring is:</p>
+<ul>
+<li><strong>GND:</strong> Pin 6</li>
+<li><strong>Board TX (to Adapter RX):</strong> Pin 8</li>
+<li><strong>Board RX (to Adapter TX):</strong> Pin 10</li>
+</ul>
+<p>To connect from my terminal, I used <code>tio</code> with the following command (adjust your <code>/dev/tty.*</code> path as needed):</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">tio /dev/tty.usbserial-A5069RR4 -o <span class="m">1</span>
+</span></span></code></pre></div><p>I also kept a vendor-flashed microSD card around as a &ldquo;known good&rdquo; recovery path. If your SPI flash is blank or you soft-brick your bootloader while experimenting, booting from a vendor image can be a quick way back to a U-Boot prompt.</p>
+<h2 id="correct-eeprom-data-optional-but-recommended">Correct EEPROM Data (Optional but Recommended)</h2>
+<p>Some Milk-V Mars CM Lite units shipped from the factory with incorrect or uninitialized EEPROM data (for example, wrong values for DRAM size and the eMMC size field). It is highly recommended to fix this before updating U-Boot, as U-Boot relies on these values to properly initialize the hardware.</p>
+<p>According to the excellent resource at <a href="https://freeshell.de/e/riscv64/vf2eeprom/">freeshell.de</a>, you can rewrite the EEPROM using the U-Boot console.</p>
+<ol>
+<li>Boot the board with your vendor-flashed SD card and watch the serial console.</li>
+<li><strong>Hit any key to interrupt the autoboot</strong> and drop into the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>Run the following commands to write the correct EEPROM values.</p>
+<p><em>Note: The command below assumes D004 represents 4GB DDR, E032 represents 32GB eMMC (for the non-Lite module), and 00001234 represents SN. For CM Lite, the eMMC value should reflect that there is no onboard eMMC. Refer to the <a href="https://milkv.io/docs/mars/compute-module/update-eeprom">update EEPROM guide</a> to construct the proper string for your specific module and enable write access to EEPROM.</em></p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">mac product_id MARC-V10-2340-D004E032-00001234
+</span></span><span class="line"><span class="cl">mac write_eeprom
+</span></span></code></pre></div><p>Once the EEPROM is corrected, you can proceed to updating U-Boot.</p>
+<h2 id="update-u-boot">Update U-Boot</h2>
+<p>The stock/vendor U-Boot that ships on the Mars CM is old and heavily board-patched. In practice that means rough edges with EFI booting (needed for Debian&rsquo;s netboot <code>mini.efi</code>), less reliable NVMe enumeration, and confusing environment defaults.</p>
+<p>For this walkthrough, we want a recent upstream-ish U-Boot in SPI flash so we can:</p>
+<ul>
+<li>Boot the Debian Installer EFI image directly from U-Boot</li>
+<li>Use U-Boot&rsquo;s standard distro-boot logic to find GRUB on the NVMe</li>
+<li>Prefer NVMe early in the boot order</li>
+</ul>
+<ol>
+<li>Download the latest U-Boot release for the StarFive/VisionFive2 family (which supports the Mars CM) from <a href="https://freeshell.de/e/riscv64/vf2eeprom/">this repository</a>. I&rsquo;ve been using the <a href="https://freeshell.de/e/riscv64/vf2eeprom/u-boot-v2026.04rc3-starfive-visionfive2.zip"><code>v2026.04-rc3</code></a> which is a pre-release build, but please use latest available - <code>v2026.04-rc3</code> or later is needed for this tutorial.</li>
+<li>Extract the downloaded ZIP file to get <code>u-boot-spl.bin.normal.out</code> and <code>u-boot.itb</code>.</li>
+<li>Change your working directory to the place where the extracted files are located and start the serial console.
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="nb">cd</span> path/to/u-boot
+</span></span><span class="line"><span class="cl">tio /dev/tty.usbserial-A5069RR4 -o <span class="m">1</span>
+</span></span></code></pre></div></li>
+<li>Boot the board (using whatever currently boots on your setup: a vendor SD card, or an existing U-Boot in SPI).</li>
+<li><strong>Hit any key to interrupt the autoboot</strong> and drop into the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>We will transfer the new binaries over the serial connection using Y-Modem and write them to the SPI Flash storage.</p>
+<p>At this point we&rsquo;re going to &ldquo;sneak&rdquo; the new U-Boot binaries into the board over the serial console. The mental model is straightforward:</p>
+<ol>
+<li>U-Boot receives a file into RAM at <code>$loadaddr</code>.</li>
+<li>The received size is exposed as <code>$filesize</code>.</li>
+<li>We then write that RAM buffer into the boot storage using <code>sf update</code> (as exposed by this U-Boot build).</li>
+</ol>
+<p>The one detail that matters: make sure U-Boot is already sitting in a receive command before you start the transfer from <code>tio</code>. Otherwise you&rsquo;ll just watch the host side time out.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>X</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:51:55.164] Please enter which X modem protocol to use:
+[19:51:55.164]  (0) XMODEM-1K send
+[19:51:55.164]  (1) XMODEM-CRC send
+[19:51:55.164]  (2) XMODEM-CRC receive
+</code></pre><p>Select <kbd>0</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:51:55.928] Send file with XMODEM-1K
+[19:51:55.928] Enter file name: 
+</code></pre><p>Write <code>u-boot-spl.bin.normal.out</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:52:10.856] Sending file &#39;u-boot-spl.bin.normal.out&#39;
+[19:52:10.856] Press any key to abort transfer
+...
+[19:52:24.880] Done
+U-Boot SPL 2025.01-3 (Apr 08 2025 - 23:07:41 +0000)
+DDR version: dc2e84f0.
+Trying to boot from UART
+CCC
+</code></pre><p>The SPL we just pushed is now running, and it immediately switches into &ldquo;UART boot&rdquo; mode. That <code>CCC</code> spam is a good sign: it means the board is sitting there waiting for the next stage to arrive over the serial link.</p>
+<p>Next, we send <code>u-boot.itb</code>, which contains the full U-Boot image we actually want to run.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:52:42.978] Send file with YMODEM
+[19:52:42.978] Enter file name: 
+</code></pre><p>Write <code>u-boot.itb</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:53:13.244] Sending file &#39;u-boot.itb&#39;
+[19:53:13.244] Press any key to abort transfer
+</code></pre><p>After <code>u-boot.itb</code> is received, SPL hands off into full U-Boot. From here on, we&rsquo;re no longer &ldquo;booting a one-off image&rdquo; - we&rsquo;re using a running U-Boot to update the bootloader stored on the SPI flash.</p>
+<p>One thing that can be confusing when you follow a transcript: the receive step (<code>loady</code>) has to be active on the board before you start sending from <code>tio</code>. If you&rsquo;re reproducing this live, the reliable pattern is: type the <code>loady ... &amp;&amp; sf update ...</code> command first (it will wait and print <code>CCC</code>), then start the YMODEM send from <code>tio</code>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">sf probe
+</span></span></code></pre></div><p>Now that we&rsquo;re running the newer U-Boot, we&rsquo;ll flash it permanently to the module&rsquo;s SPI.</p>
+<p>The layout we use here matches the common VisionFive2/Mars CM convention:</p>
+<ul>
+<li>SPL at SPI offset <code>0x000000</code></li>
+<li>U-Boot proper (FIT/ITB) at SPI offset <code>0x100000</code></li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">loady <span class="nv">$loadaddr</span> <span class="o">&amp;&amp;</span> sf update <span class="nv">$loadaddr</span> <span class="m">0</span> <span class="nv">$filesize</span>
+</span></span></code></pre></div><p>Once the transfer completes, the SPL binary is now in memory. The <code>loady $loadaddr</code> part is the receive step (it places the incoming data at <code>$loadaddr</code> and sets <code>$filesize</code>). The <code>sf update</code> part then copies that RAM buffer into the boot storage at a fixed offset.</p>
+<p>Do not power-cycle the board while <code>sf update</code> is running.</p>
+<p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:56:10.630] Send file with YMODEM
+[19:56:10.630] Enter file name: 
+</code></pre><p>Write <code>u-boot-spl.bin.normal.out</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:56:24.803] Sending file &#39;u-boot-spl.bin.normal.out&#39;
+[19:56:24.803] Press any key to abort transfer
+</code></pre><p>With SPL written, we do the same for <code>u-boot.itb</code> (U-Boot proper) at offset <code>0x100000</code>.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">loady <span class="nv">$loadaddr</span> <span class="o">&amp;&amp;</span> sf update <span class="nv">$loadaddr</span> <span class="m">100000</span> <span class="nv">$filesize</span>
+</span></span></code></pre></div><p>Press <kbd>CTRL</kbd>+<kbd>T</kbd> and then <kbd>Y</kbd></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:57:12.273] Send file with YMODEM
+[19:57:12.273] Enter file name: 
+</code></pre><p>Write <code>u-boot.itb</code></p>
+<pre tabindex="0"><code class="language-log" data-lang="log">[19:58:01.384] Sending file &#39;u-boot.itb&#39;
+[19:58:01.384] Press any key to abort transfer
+</code></pre><p>Finally, wipe the persisted U-Boot environment. After swapping bootloader binaries, keeping an old vendor environment around can lead to confusing behavior (stale <code>bootcmd</code>, unexpected boot targets, and defaults that no longer make sense). <code>env erase</code> resets things back to the compiled-in defaults so we can build a clean NVMe boot flow in the next steps.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">env erase
+</span></span></code></pre></div><h2 id="install-debian-to-nvme">Install Debian to NVMe</h2>
+<p>With U-Boot updated, installing Debian is straightforward: boot the Debian Installer&rsquo;s EFI binary from U-Boot, then install onto the NVMe.</p>
+<ol>
+<li>Insert the NVMe drive.</li>
+<li>Make sure Ethernet is connected.</li>
+<li>Boot and interrupt autoboot to get the <code>StarFive #</code> prompt.</li>
+</ol>
+<p>Then run:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">dhcp <span class="o">&amp;&amp;</span> wget https://deb.debian.org/debian/dists/trixie/main/installer-riscv64/current/images/netboot/mini.efi <span class="o">&amp;&amp;</span> bootefi <span class="nv">$loadaddr</span>
+</span></span></code></pre></div><p>Proceed through the installer normally.</p>
+<p>Important: when the installer asks about installing GRUB to the fallback &ldquo;removable media path&rdquo;, answer <strong>Yes</strong>.</p>
+<pre tabindex="0"><code class="language-terminal" data-lang="terminal">It seems that this computer is configured to boot via EFI, but maybe
+that configuration will not work for booting from the hard drive.
+Some EFI firmware implementations do not meet the EFI specification
+(i.e. they are buggy!) and do not support proper configuration of
+boot options from system hard drives.
+
+A workaround for this problem is to install an extra copy of the EFI
+version of the GRUB boot loader to a fallback location, the
+&#34;removable media path&#34;. Almost all EFI systems, no matter how buggy,
+will boot GRUB that way.
+
+[...]
+</code></pre><p>That fallback path (<code>EFI/BOOT/BOOTRISCV64.EFI</code>) is what U-Boot typically finds during its EFI scan.</p>
+<h2 id="wrapping-up">Wrapping Up</h2>
+<p>At this point, you should have a Debian system installed on NVMe and a recent U-Boot living in SPI flash.</p>
+<p>Happy hacking on RISC-V!</p>
+]]></content:encoded>
+    </item>
+  </channel>
+</rss>
